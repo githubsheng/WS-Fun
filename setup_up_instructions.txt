@@ -1,0 +1,25 @@
+1.
+Donwload and install redis at http://redis.io/download. If you are using mac, you can also do `brew install redis`.
+
+2.
+Run redis-server on your machine. on default port 6379. You can open terminal and type `redis-server`
+
+3.
+Download and install lastest node.js at https://nodejs.org/en/download/ This project assumes the node can handle most es6 features.
+
+4.
+Unzip the project source code and navigate to the root folder of the project.
+
+5.
+Type in `npm start`. Wait until it installs dependencies. In this case it will install "ejs" and "express" as MVC framework (as required). It will also install "node_redis", which is the connector to redis server. "compression" is installed to do gzip.
+
+6.
+Once dependencies are installed, server will start running, and it will print a message in the console.
+
+7.
+Wait for 2 or 3 seconds for server to crawl data from instagram.
+
+8.
+Open your browser and try http://localhost:3000/
+
+Should you encounter any issue please call 5990 7331 or mail to wang.sheng.unique@icloud.com

@@ -1,0 +1,31 @@
+Things I did to increase initial load speed:
+
+1.
+Since this project is small, I embedded all JavaScript and CSS styles inside the HTML, so that it saves at least two request round trips (one for stylesheet and once for js file).
+
+2.
+Content is compressed by Gzip if the request header indicates that the browser supports gzip.
+
+3.
+Static files (such as images) are instructed to be cached.
+
+4.
+The first batch of data (the first 10 posts) is embedded inside the html itself. By doing this I am able to save an ajax request round trip.
+
+It takes a single http request to load the page and data of first 10 posts. The response is 6kb.
+
+Things I could have done but didn't
+
+1.
+I did not minimize the html, js, and css. Because you would possibly need to read them.
+
+Things I did to get smooth scroll effect:
+
+1.
+Calculate the height of the image, and set the image container's min-height to the calculated value. When later the image is loaded, it does not "pushes" everthing below it lower.
+
+2.
+When the user scrolls down and when he is "two window height" away from bottom, an request is sent out to fetch 10 posts. And when the user scrolls to the bottom, the response usually has been received.
+
+3.
+Clickable areas are small and the chance you accidentally tapped on a link (on touch screen) when scrolling is small.

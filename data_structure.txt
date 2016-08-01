@@ -1,0 +1,21 @@
+In Redis:
+All posts are stored in redis as a "Hashes", using `hmset` command.
+The followings are the key and value descriptions:
+
+id: (string) id of the post, the original post can be accessed by https://www.instagram.com/p/${id}/
+caption: (string) title of the post
+date: (number) time when the post in published, represented in milliseconds (with the 3 least siginificant digits removed);
+likes: (number) number of likes
+comments: (number) number of comments
+imgSrc: (string) the url of the image in the post. 
+videoURL: (string) the url of the video in the post. if the post does not have a video, this field defaults to "n/a"
+width = (number) natural width of the image
+height = (number) natural height of the image
+
+Sorting information is stored as "Sorted Sets". In this project I have 3 sorted sets, "sortedByLikes", "sortedByComments" and "sortedByDates".
+
+"sortedByLikes" stores the "id"s of all posts, each post "id" is associated with "likes". The "id"s are sorted by corresponding "likes" values.
+"sortedByComments" and "sortedByDates" are similar to "sortedByLikes".
+
+In Node.js
+Posts are represented by instances of `Post` class. The class is located in "server.js".

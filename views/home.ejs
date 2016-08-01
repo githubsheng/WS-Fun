@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="user-scalable=no, width=device-width, initial-scale=1.0">
+    <title>9GAG, your daily source of fun</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Helvetica Neue, Arial, Helvetica, Geneva, sans-serif
+        }
+
+        #menu {
+            background: black;
+            color: white;
+            font-size: 13px;
+            height: 30px;
+            position: fixed;
+            left: 0;
+            right: 0;
+            z-index: 2;
+        }
+
+        #menu div {
+            padding: 0 10px;
+            height: 30px;
+            line-height: 30px;
+            float: left;
+        }
+
+        @keyframes keyframeRotateLogo {
+            from {
+                transform: perspective(500px) rotateY(0);
+            }
+            to {
+                transform: perspective(500px) rotateY(180deg);
+            }
+        }
+
+        #logo {
+            animation: keyframeRotateLogo 2s 1s alternate both infinite;
+        }
+
+        #menu div.btn:hover {
+            background: #5c5a5a;
+            cursor: pointer;
+        }
+
+        #mainContainer {
+            width: 100%;
+            margin: 0 auto;
+            padding-top: 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        @media only screen and (min-device-width: 768px) {
+            #mainContainer {
+                width: 500px;
+            }
+        }
+
+        .post {
+            margin-bottom: 30px;
+            border-top: 1px solid #eee;
+            padding: 20px 0 0;
+        }
+
+        .post a:hover {
+            color: #09f;
+        }
+
+        .post h2 {
+            margin: 10px 0;
+            padding: 0 10px;
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+
+        @media only screen and (min-device-width: 768px) {
+            .post h2 {
+                padding: 0;
+            }
+        }
+
+        .post h2 a {
+            text-decoration: none;
+            color: black;
+        }
+
+        .post .imgContainer {
+            position: relative;
+        }
+
+        .post img, .post video {
+            width: 100%;
+        }
+
+        .post video:hover {
+            cursor: pointer;
+        }
+
+        .post img.videoMark {
+            position: absolute;
+            width: auto;
+            top: 0;
+            right: 0;
+        }
+
+        .post .stats {
+            line-height: 20px;
+            margin-top: 5px;
+            font-size: 13px;
+            color: #999;
+            padding: 0 10px;
+        }
+
+        @media only screen and (min-device-width: 768px) {
+            .post .stats {
+                padding: 0;
+            }
+        }
+
+        .post .stats a {
+            color: #999;
+            text-decoration: none;
+            float: right;
+        }
+
+        .endOfFun {
+            color: darkgray;
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        .highlight {
+            /*box-shadow: 0 1px 4px 1px #6c6969;*/
+        }
+    </style>
+</head>
+<body>
+<div id="menu">
+    <div id="logo">9GAG</div>
+    <div id="sortedByLikes" class="btn">liked</div>
+    <div id="sortedByComments" class="btn">Hot</div>
+    <div id="sortedByDates" class="btn">Fresh</div>
+</div>
+<div id="mainContainer">
+
+</div>
+<script type="text/javascript">
+    //post information is usually fetched via ajax, but the first batch data is embedded here to save another http round trip.
+    //this is intended to allow the first batch of images shown faster.
+    var initData = <%- initData %>;
+</script>
+<script type="text/javascript">
+    //tested on osx: chrome, safari, firefox, opera
+    //tested on ios: chrome, safari
+    //tested on android: chrome
+
+    var isFetching = false; //indicate that I am  waiting for an ajax request to come back with response.
+    var hasNext = true; //indicate whether there are more postEles or not
+    var next = 10; //cursor used to tell server from where I want to continue fetching more postEles
+    var sortBy = "sortedByLikes"; //tells how to sort our postEles, valid values are `sortedByLikes`, `sortedByDates` and `sortedByComments`
+    var mainContainer = document.getElementById("mainContainer"); //cache the mainContainer, I will need to add various of elements in it.
+    var postEles = [];
+    var indicesOfElesInView = [];
+
+    /**
+     * this is a cross browser compatible way to get pageYOffset, this function is copied from mdn
+     * https://developer.mozilla.org/en-US/docs/Web/API/Window/scrollY
+     */
+    var getScrollTop = (function () {
+
+        var supportPageOffset = window.pageXOffset !== undefined;
+        var isCSS1Compat = ((document.compatMode || "") === "CSS1Compat");
+
+        return function () {
+            return supportPageOffset ? window.pageYOffset : isCSS1Compat ? document.documentElement.scrollTop : document.body.scrollTop;
+        }
+
+    })();
+
+    enableCustomSort();
+    makePostElements(initData);
+    enableInfiteScroll();
+    enableResetScrollWhenUnload();
+
+    /**
+     * add event listeners to menu buttons. The event listeners sort the postEles when triggered.
+     */
+    function enableCustomSort() {
+
+        document.getElementById("sortedByLikes").onclick = function () {
+            reloadAndSortBy("sortedByLikes");
+        }
+        document.getElementById("sortedByComments").onclick = function () {
+            reloadAndSortBy("sortedByDates");
+        };
+        document.getElementById("sortedByDates").onclick = function () {
+            reloadAndSortBy("sortedByComments");
+        };
+
+        /**
+         * remove all postEles from page and fetch new postEles from server based on new sorting.
+         * @param s sort by `s`
+         */
+        function reloadAndSortBy(s) {
+            if (sortBy !== s) {
+                while (mainContainer.firstChild)
+                    mainContainer.removeChild(mainContainer.firstChild);
+                sortBy = s;
+                hasNext = true;
+                next = 0;
+                getNewPosts();
+            }
+        }
+    }
+
+    /**
+     * fetch new postEles when user scroll down.
+     */
+    function enableInfiteScroll() {
+
+        window.onscroll = function () {
+            getNewPostsIfCloseToBottom();
+            findPostsInView(playVideoIfScrollIntoView, pauseVideoIfScrollOutOfView);
+
+            //this feature should only apply to desktop.
+            function playVideoIfScrollIntoView(idx) {
+                if(mobilecheck()) return;//I don't want to auto play video on mobile browsers.
+                if(postEles[idx].gIsVideo) postEles[idx].gStartPlaying();
+
+            }
+
+            function pauseVideoIfScrollOutOfView(idx) {
+                if(mobilecheck()) return;//I don't want to auto play video on mobile browsers.
+                if(postEles[idx].gIsVideo) postEles[idx].gPausePlaying();
+            }
+        };
+
+        function getNewPostsIfCloseToBottom() {
+            //only send out requests to fetch new postEles when I know there are more postEles and I hasn't already sent one
+            if (hasNext && !isFetching) {
+                var scrollTop = getScrollTop();
+                //when user is approximately two window height away from end.
+                if (mainContainer.clientHeight - scrollTop < 2 * document.documentElement.clientHeight)
+                    getNewPosts();
+            }
+        }
+
+        function findPostsInView(callWhenElementComesIntoView, callWhenElementsGoesOutOfView) {
+
+            var viewRange = getViewRangeRelativeToDocumentTop();
+
+            /**
+             * if there is nothing in the view, newIdxOfFirstPostInView will be larger than newIdxOfLastPostInView
+             *
+             * reasons:
+             * postA, viewRangeStart, viewRangeEnd, postB
+             * in the above case, no posts are in the view range, and postB is the first larger than viewRangeStart,
+             * and its index becomes newIdxOfFirstPostInView. postA is the last smaller than viewRangeEnd, and its index
+             * becomes newIdxOfLastPostInView. therefore in this case, newIdxOfFirstPostInView (postB index) will be larger
+             * than newIdxOfLastPostInView (postA index).
+             */
+            var newIdxOfFirstPostInView = searchFirstPostLowerThanOffset(postEles, viewRange.start);
+            var newIdxOfLastPostInView = searchLastPostHigherThanOffset(postEles, viewRange.end);
+            var newIndicesOfElesInView = [];
+
+            for (var i = newIdxOfFirstPostInView; i <= newIdxOfLastPostInView; i++)
+                newIndicesOfElesInView.push(i);
+
+            indicesOfElesInView.forEach(function (idx) {
+                if (newIndicesOfElesInView.indexOf(idx) === -1) {
+                    //this post was in view but now it is not. it is scrolled out of view.
+                    if (callWhenElementsGoesOutOfView) callWhenElementsGoesOutOfView(idx);
+                    postEles[idx].className = "post";
+                }
+            });
+
+            newIndicesOfElesInView.forEach(function (idx) {
+                if (indicesOfElesInView.indexOf(idx) === -1) {
+                    //this post is now in view but previously was not. it is just scrolled into view.
+                    if (callWhenElementComesIntoView) callWhenElementComesIntoView(idx);
+                    postEles[idx].className = "post highlight";
+                }
+            });
+
+            indicesOfElesInView = newIndicesOfElesInView;
+
+            //this function assumes that there is duplicate elements in array
+            function searchFirstPostLowerThanOffset(sortedArray, k) {
+                var left = 0, right = sortedArray.length - 1, ret = -1;
+                while (left <= right) {
+                    var mid = left + Math.floor((right - left) / 2);
+                    if (sortedArray[mid].gPageOffset > k) {
+                        ret = mid;
+                        right = mid - 1;
+                    } else if (sortedArray[mid].gPageOffset < k) {
+                        left = mid + 1;
+                    } else {
+                        return mid;
+                    }
+                }
+                return ret;
+            }
+
+            //this function assumes that there is duplicate elements in array
+            function searchLastPostHigherThanOffset(sortedArray, k) {
+                var left = 0, right = sortedArray.length - 1, ret = -1;
+                while (left <= right) {
+                    var mid = left + Math.floor((right - left) / 2);
+                    if (sortedArray[mid].gPageOffset > k) {
+                        right = mid - 1;
+                    } else if (sortedArray[mid].gPageOffset < k) {
+                        ret = mid;
+                        left = mid + 1;
+                    } else {
+                        return mid;
+                    }
+                }
+                return ret;
+            }
+
+            function getViewRangeRelativeToDocumentTop() {
+                return {
+                    start: getScrollTop(),
+                    end: getScrollTop() + window.innerHeight
+                }
+            }
+        }
+
+    }
+
+    function getNewPosts() {
+
+        //turn this flag on so that no more requests are sent until I get a response back.
+        isFetching = true;
+        var url = "query?sortBy=" + sortBy + "&start=" + next;
+        get(url, fetchPostSuccess, fetchPostFailure);
+
+        function fetchPostSuccess(res) {
+
+            var ret = JSON.parse(res);
+            //gets no postEles, this means server has no more postEles.
+            if (ret.posts.length === 0) {
+                makeEndOfFunReminder();
+                hasNext = false;
+                return;
+            }
+            var posts = ret.posts;
+            makePostElements(posts);
+            //set the cursor, I need to send this cursor back to server to tell it where I want to start with.
+            next = ret.next;
+            isFetching = false;
+
+        }
+
+        function fetchPostFailure() {
+            //if failure, set this flag to false so user may retry
+            isFetching = false;
+        }
+
+    }
+
+    function makePostElements(postInfoList) {
+
+        //append the generated dom elements to this detached DomFrag to get better performance.
+        var frag = document.createDocumentFragment();
+        var newPostEles = postInfoList.map(makeSinglePostElement);
+        newPostEles.forEach(function (postEle) {
+            frag.appendChild(postEle);
+        });
+        mainContainer.appendChild(frag);
+        newPostEles.forEach(function (postEle) {
+            //calculate the distance from document top to the center of the post.
+            postEles.push(postEle);
+            postEle.gPageOffset = getDocumentOffsetY(postEle) + postEle.clientHeight / 2;
+        });
+
+        function makeSinglePostElement(post) {
+
+            var postContainerEle = document.createElement("div");
+            postContainerEle.id = post.id;
+            postContainerEle.className = "post";
+
+            var titleEle = makeTitleEle(post);
+            postContainerEle.appendChild(titleEle);
+
+            var imgContainer = document.createElement("div");
+            imgContainer.className = "imgContainer";
+
+            /**
+             * calculate the image height, and set the value as the height of image container. when image loads, its height
+             * will match the container's height rather than cause a re-flow
+             */
+            imgContainer.style.minHeight = mainContainer.clientWidth / post.width * post.height + "px";
+            postContainerEle.appendChild(imgContainer);
+
+            if (post.videoURL !== "n/a") {
+                imgContainer.appendChild(makeVideoEle(post));
+                imgContainer.appendChild(makeVideoMarkEle());
+                postContainerEle.gIsVideo = true;
+            } else {
+                var imgEle = document.createElement("img");
+                imgEle.src = post.imgSrc;
+                imgContainer.appendChild(imgEle);
+            }
+
+            var stats = document.createElement("div");
+            stats.className = "stats";
+            stats.appendChild(makeLikesAndCommentsEle(post));
+            stats.appendChild(makeDisplayTimeEle(post));
+
+            postContainerEle.appendChild(stats);
+
+            return postContainerEle;
+
+            //creates a html5 video tag to play inline video. (in ios, inline video is impossible on web pages).
+            function makeVideoEle(post) {
+
+                //whether the video is playing
+                var isPlaying = false;
+                var videoEle = document.createElement("video");
+                videoEle.src = post.videoURL;
+                videoEle.poster = post.imgSrc;
+                //is playing, click will pause the video. if not playing, click will play the video
+
+                videoEle.onclick = function(){
+                    isPlaying ? videoEle.pause() : videoEle.play();
+                    isPlaying = !isPlaying;
+                };
+
+                postContainerEle.gPausePlaying = function(){
+                    isPlaying = false;
+                    videoEle.pause();
+                };
+
+                postContainerEle.gStartPlaying = function(){
+                    isPlaying = true;
+                    videoEle.play();
+                }
+
+                return videoEle;
+
+            }
+
+            //adds a tiny icon on the top right corner of the video to tell user that this is a video.
+            function makeVideoMarkEle() {
+
+                var videoMarkEle = document.createElement("img");
+                videoMarkEle.src = "videoMark.png";
+                videoMarkEle.className = "videoMark";
+                return videoMarkEle;
+
+            }
+
+            //a tiny LL(1) parser to parse the post caption and generate links to hash tags and user tags.
+            function makeTitleEle(post) {
+
+                var caption = post.caption;
+                var idx = 0;
+                var titleEle = document.createElement("h2");
+
+                while (idx < caption.length) {
+
+                    var c = caption[idx];
+                    //some legacy browser does not support switch case on string, and hence this big if else statement.
+                    if (c === '#') {
+                        expectHashTag();
+                    } else if (c === '@') {
+                        expectUserTag();
+                    } else {
+                        expectNormalText();
+                    }
+
+                }
+                return titleEle;
+
+                //assuming that #tag and @tag only consists of a-zA-Z0-9_ for simplicity.
+                function isValidTagChar(c) {
+
+                    var cc = c.charCodeAt(0);
+                    return isazAZ(cc) || isNumber(cc);
+
+                    function isazAZ(cc) {
+                        return (cc >= 97 && cc <= 122) || (cc >= 65 && cc <= 90);
+                    }
+
+                    function isNumber(cc) {
+                        return cc >= 48 && cc <= 57;
+                    }
+                }
+
+                function expectTagText() {
+
+                    var ret = "", c;
+                    while (idx < caption.length) {
+                        c = caption[idx];
+                        if (!isValidTagChar(c)) break;
+                        ret += c;
+                        idx++;
+                    }
+                    return ret;
+
+                }
+
+                function expectHashTag() {
+
+                    idx++;
+                    var tagTxt = expectTagText();
+                    var aEle = document.createElement("a");
+                    aEle.appendChild(document.createTextNode("#" + tagTxt));
+                    aEle.href = "https://www.instagram.com/explore/tags/" + tagTxt;
+                    titleEle.appendChild(aEle);
+
+                }
+
+                function expectUserTag() {
+
+                    idx++;
+                    var tagTxt = expectTagText();
+                    var aEle = document.createElement("a");
+                    aEle.appendChild(document.createTextNode("@" + tagTxt));
+                    aEle.href = "https://www.instagram.com/" + tagTxt;
+                    titleEle.appendChild(aEle);
+
+                }
+
+                function expectNormalText() {
+
+                    var ret = "", c;
+                    while (idx < caption.length) {
+                        c = caption[idx];
+                        if (c === '#' || c === '@')  break;
+                        ret += c;
+                        idx++;
+                    }
+                    titleEle.appendChild(document.createTextNode(ret));
+
+                }
+            }
+
+            //display time at the bottom right corner of a post. when user click on this it will goes to the original instagram
+            //post.
+            function makeDisplayTimeEle(post) {
+
+                var displayText = calculateDisplayText(post.date);
+
+                var aEle = document.createElement("a");
+                aEle.target = "_blank";
+                aEle.href = "https://www.instagram.com/p/" + post.id;
+                aEle.appendChild(document.createTextNode(displayText));
+                return aEle;
+
+                //calculate the elapsed time since post is published. time is displayed using units: `just now`, `m`, `h`, `d`, `w`, `long long ago`.
+                function calculateDisplayText(date /* this value is already in seconds */) {
+
+                    var now = Date.now() / 1000; //in seconds
+                    var elapsed = now - date; //elapsed time in seconds
+                    if (elapsed < 60) return "just now"; //if the post is published less than 60 seconds ago, show `just now`
+                    elapsed /= 60; //in minutes
+                    if (elapsed < 60) return Math.floor(elapsed) + "m";
+                    elapsed /= 60; //in hours
+                    if (elapsed < 24) return Math.floor(elapsed) + "h";
+                    elapsed /= 24; //in days
+                    if (elapsed < 7) return Math.floor(elapsed) + "d";
+                    if (elapsed < 30) return Math.floor(elapsed / 7) + "w"; // a month is roughly 30 days, i don't need the result to be precious here.
+                    return "long long ago";
+
+                }
+
+            }
+
+            //display the number of likes and comments at the bottom left corner of a post.
+            function makeLikesAndCommentsEle(post) {
+
+                var likesText = convertText(post.likes);
+                var commentsText = convertText(post.comments);
+                return document.createTextNode(likesText + " likes - " + commentsText + " comments");
+
+                function convertText(likes) {
+
+                    if (likes < 1000) return likes;
+                    likes /= 1000; // in thousands
+                    if (likes < 1000) return Math.floor(likes) + "k";
+                    likes /= 1000; // in millions.
+                    //toPrecision or toFixed here cannot reproduce instagram style likes and comments as they round the number to the nearest
+                    //for instance, 1.29.toFixed(1) will produce 1.3. but I need it to be 1.2
+                    var integerPart = Math.floor(likes);
+                    var decimalPart = Math.floor((likes - integerPart) * 10);
+                    return decimalPart === 0 ? integerPart + "m" : integerPart + "." + decimalPart + "m";
+
+                }
+            }
+        }
+
+        function getDocumentOffsetY(element) {
+            //getBoundingClientRect().top only gives top relative to viewport, so I need to add scroll top into consideration
+            //get the offset from the top of the document.
+            return getScrollTop() + element.getBoundingClientRect().top;
+        }
+
+    }
+
+    //show a message to indicate there is no more postEles.
+    function makeEndOfFunReminder() {
+
+        var div = document.createElement("div");
+        div.className = "endOfFun";
+        div.appendChild(document.createTextNode("EOF! end of fun"));
+        mainContainer.appendChild(div);
+
+    }
+
+    //utility function to send an ajax request.
+    function get(url, success, failure) {
+
+        var xmlhttp = new XMLHttpRequest();
+
+        xmlhttp.onreadystatechange = function () {
+            if (xmlhttp.readyState == XMLHttpRequest.DONE) {
+                if (xmlhttp.status == 200) {
+                    success(xmlhttp.responseText);
+                } else {
+                    failure();
+                }
+            }
+        };
+
+        xmlhttp.open("GET", url, true);
+        xmlhttp.send();
+
+    }
+
+    //some browsers automatically scroll the page to the last remembered position when refresh, this feature scroll the page to the top
+    //when page is being unloaded, so that when the page is refreshed, I can start from top.
+    function enableResetScrollWhenUnload() {
+
+        window.onbeforeunload = function () {
+            window.scrollTo(0, 0);
+        }
+
+    }
+
+    var mobileCheckRegexOne = /(android|bb\d+|meego).+mobile|avantgo|bada\/|blackberry|blazer|compal|elaine|fennec|hiptop|iemobile|ip(hone|od)|iris|kindle|lge |maemo|midp|mmp|mobile.+firefox|netfront|opera m(ob|in)i|palm( os)?|phone|p(ixi|re)\/|plucker|pocket|psp|series(4|6)0|symbian|treo|up\.(browser|link)|vodafone|wap|windows ce|xda|xiino/i;
+    var mobileCheckRegexTwo = /1207|6310|6590|3gso|4thp|50[1-6]i|770s|802s|a wa|abac|ac(er|oo|s\-)|ai(ko|rn)|al(av|ca|co)|amoi|an(ex|ny|yw)|aptu|ar(ch|go)|as(te|us)|attw|au(di|\-m|r |s )|avan|be(ck|ll|nq)|bi(lb|rd)|bl(ac|az)|br(e|v)w|bumb|bw\-(n|u)|c55\/|capi|ccwa|cdm\-|cell|chtm|cldc|cmd\-|co(mp|nd)|craw|da(it|ll|ng)|dbte|dc\-s|devi|dica|dmob|do(c|p)o|ds(12|\-d)|el(49|ai)|em(l2|ul)|er(ic|k0)|esl8|ez([4-7]0|os|wa|ze)|fetc|fly(\-|_)|g1 u|g560|gene|gf\-5|g\-mo|go(\.w|od)|gr(ad|un)|haie|hcit|hd\-(m|p|t)|hei\-|hi(pt|ta)|hp( i|ip)|hs\-c|ht(c(\-| |_|a|g|p|s|t)|tp)|hu(aw|tc)|i\-(20|go|ma)|i230|iac( |\-|\/)|ibro|idea|ig01|ikom|im1k|inno|ipaq|iris|ja(t|v)a|jbro|jemu|jigs|kddi|keji|kgt( |\/)|klon|kpt |kwc\-|kyo(c|k)|le(no|xi)|lg( g|\/(k|l|u)|50|54|\-[a-w])|libw|lynx|m1\-w|m3ga|m50\/|ma(te|ui|xo)|mc(01|21|ca)|m\-cr|me(rc|ri)|mi(o8|oa|ts)|mmef|mo(01|02|bi|de|do|t(\-| |o|v)|zz)|mt(50|p1|v )|mwbp|mywa|n10[0-2]|n20[2-3]|n30(0|2)|n50(0|2|5)|n7(0(0|1)|10)|ne((c|m)\-|on|tf|wf|wg|wt)|nok(6|i)|nzph|o2im|op(ti|wv)|oran|owg1|p800|pan(a|d|t)|pdxg|pg(13|\-([1-8]|c))|phil|pire|pl(ay|uc)|pn\-2|po(ck|rt|se)|prox|psio|pt\-g|qa\-a|qc(07|12|21|32|60|\-[2-7]|i\-)|qtek|r380|r600|raks|rim9|ro(ve|zo)|s55\/|sa(ge|ma|mm|ms|ny|va)|sc(01|h\-|oo|p\-)|sdk\/|se(c(\-|0|1)|47|mc|nd|ri)|sgh\-|shar|sie(\-|m)|sk\-0|sl(45|id)|sm(al|ar|b3|it|t5)|so(ft|ny)|sp(01|h\-|v\-|v )|sy(01|mb)|t2(18|50)|t6(00|10|18)|ta(gt|lk)|tcl\-|tdg\-|tel(i|m)|tim\-|t\-mo|to(pl|sh)|ts(70|m\-|m3|m5)|tx\-9|up(\.b|g1|si)|utst|v400|v750|veri|vi(rg|te)|vk(40|5[0-3]|\-v)|vm40|voda|vulc|vx(52|53|60|61|70|80|81|83|85|98)|w3c(\-| )|webc|whit|wi(g |nc|nw)|wmlb|wonu|x700|yas\-|your|zeto|zte\-/i;
+
+    function mobilecheck() {
+        var check = false;
+        (function(a){if(mobileCheckRegexOne.test(a) || mobileCheckRegexTwo.test(a.substr(0,4)))check = true})(navigator.userAgent||navigator.vendor||window.opera);
+        return check;
+    }
+</script>
+</body>
+</html>
