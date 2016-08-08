@@ -52,6 +52,30 @@ function startServer() {
 
     });
 
+    app.get("/pin", function(req, res){
+        let postId = req.query.postId;
+        redisClient.hgetall(postId, (err, post) => {
+            if(err) {
+                res.status(400).end();
+                return;
+            }
+            pinPost(post);
+            res.send('OK');
+        });
+    });
+
+    app.get("/unpin", function(req, res){
+        let postId = req.query.postId;
+        redisClient.hgetall(postId, (err, post) => {
+            if(err) {
+                res.status(400).end();
+                return;
+            }
+            unpinPost(post);
+            res.send('OK');
+        });
+    });
+
     function getDefaultRedisReadFailureHanlder(res){
 
         return () => res.status(500).send({error: "oops! code challenge failed!"});
@@ -97,6 +121,7 @@ class Post {
         this.videoURL = videoURL ? videoURL : "n/a";
         this.width = dimensions.width;
         this.height = dimensions.height;
+        this.isPinned = "false";
     }
 
 }
@@ -113,6 +138,26 @@ function storePostInfoIntoRedis(postInfo) {
     redisClient.zadd("sortedByDates", post.date, post.id);
     redisClient.zadd("sortedByLikes", post.likes, post.id);
 
+}
+
+var pinInc = 1000000000; //1 billion
+
+function pinPost(post) {
+    post.isPinned = "true";
+    redisClient.hset(post.id, "isPinned", "true");
+    redisClient.zadd("sortedByComments", post.comments + pinInc, post.id);
+    redisClient.zadd("sortedByDates", post.date + pinInc, post.id);
+    redisClient.zadd("sortedByLikes", post.likes + pinInc, post.id);
+}
+
+function unpinPost(post){
+    if(post.isPinned === "true") {
+        post.isPinned = "false";
+        redisClient.hset(post.id, "isPinned", "false");
+        redisClient.zadd("sortedByComments", post.comments, post.id);
+        redisClient.zadd("sortedByDates", post.date, post.id);
+        redisClient.zadd("sortedByLikes", post.likes, post.id);
+    }
 }
 
 //pull data from instagram. see `crawler.js` for more information.

@@ -127,6 +127,10 @@
             float: right;
         }
 
+        .post .stats button {
+            float: right;
+        }
+
         .endOfFun {
             color: darkgray;
             text-align: center;
@@ -136,6 +140,30 @@
         .highlight {
             /*box-shadow: 0 1px 4px 1px #6c6969;*/
         }
+
+        @keyframes bounce {
+            15% { transform: translateX(-25%) rotate(-5deg); }
+            30% { transform: translateX(20%) rotate(3deg); }
+            45% { transform: translateX(-15%) rotate(-3deg); }
+            60% { transform: translateX(10%) rotate(2deg); }
+            75% { transform: translateX(-5%) rotate(-1deg); }
+        }
+
+        .isPinned {
+            animation: bounce 2s;
+        }
+
+        .highlight * {
+            color: lightskyblue !important;
+        }
+
+        button {
+            background: white;
+            border: 1px solid lightgray;
+            border-radius: 5%;
+            margin-right: 5px;
+        }
+
     </style>
 </head>
 <body>
@@ -144,6 +172,7 @@
     <div id="sortedByLikes" class="btn">liked</div>
     <div id="sortedByComments" class="btn">Hot</div>
     <div id="sortedByDates" class="btn">Fresh</div>
+    <div id="pinned" class="btn">Pinned</div>
 </div>
 <div id="mainContainer">
 
@@ -165,6 +194,7 @@
     var mainContainer = document.getElementById("mainContainer"); //cache the mainContainer, I will need to add various of elements in it.
     var postEles = [];
     var indicesOfElesInView = [];
+    var pinnedOnly = false;
 
     /**
      * this is a cross browser compatible way to get pageYOffset, this function is copied from mdn
@@ -192,26 +222,32 @@
     function enableCustomSort() {
 
         document.getElementById("sortedByLikes").onclick = function () {
-            reloadAndSortBy("sortedByLikes");
+            reloadAndSortBy("sortedByLikes", false);
         }
         document.getElementById("sortedByComments").onclick = function () {
-            reloadAndSortBy("sortedByDates");
+            reloadAndSortBy("sortedByComments", false);
         };
         document.getElementById("sortedByDates").onclick = function () {
-            reloadAndSortBy("sortedByComments");
+            reloadAndSortBy("sortedByDates", false);
         };
+        document.getElementById("pinned").onclick = function () {
+            reloadAndSortBy("sortedByLikes", true);
+        }
 
         /**
          * remove all postEles from page and fetch new postEles from server based on new sorting.
          * @param s sort by `s`
          */
-        function reloadAndSortBy(s) {
+        function reloadAndSortBy(s, isPinned) {
             if (sortBy !== s) {
                 while (mainContainer.firstChild)
                     mainContainer.removeChild(mainContainer.firstChild);
                 sortBy = s;
                 hasNext = true;
                 next = 0;
+                postEles = [];
+                indicesOfElesInView = [];
+                pinnedOnly = isPinned;
                 getNewPosts();
             }
         }
@@ -274,7 +310,7 @@
                 if (newIndicesOfElesInView.indexOf(idx) === -1) {
                     //this post was in view but now it is not. it is scrolled out of view.
                     if (callWhenElementsGoesOutOfView) callWhenElementsGoesOutOfView(idx);
-                    postEles[idx].className = "post";
+                    postEles[idx].classList.remove("highlight");
                 }
             });
 
@@ -282,7 +318,7 @@
                 if (indicesOfElesInView.indexOf(idx) === -1) {
                     //this post is now in view but previously was not. it is just scrolled into view.
                     if (callWhenElementComesIntoView) callWhenElementComesIntoView(idx);
-                    postEles[idx].className = "post highlight";
+                    postEles[idx].classList.add("highlight");
                 }
             });
 
@@ -342,6 +378,11 @@
         function fetchPostSuccess(res) {
 
             var ret = JSON.parse(res);
+            if(pinnedOnly) {
+                ret.posts = ret.posts.filter(function(p){
+                    return p.isPinned === "true";
+                });
+            }
             //gets no postEles, this means server has no more postEles.
             if (ret.posts.length === 0) {
                 makeEndOfFunReminder();
@@ -411,6 +452,10 @@
             stats.className = "stats";
             stats.appendChild(makeLikesAndCommentsEle(post));
             stats.appendChild(makeDisplayTimeEle(post));
+            stats.appendChild(makePinButton(post));
+            stats.appendChild(makeUnpinButton(post));
+
+            if(post.isPinned === "true") postContainerEle.classList.add("isPinned");
 
             postContainerEle.appendChild(stats);
 
@@ -541,6 +586,36 @@
                 }
             }
 
+            function makePinButton(post){
+                var pinBtn = document.createElement("button");
+                pinBtn.innerText = "Pin";
+                pinBtn.classList.add("pinBtn");
+                pinBtn.onclick = function(){
+                    var url = "pin?postId=" + post.id;
+                    get(url, function(){
+                        post.isPinned = "true";
+                        postContainerEle.classList.add("isPinned");
+
+                    });
+                };
+                return pinBtn;
+            }
+
+            function makeUnpinButton(post){
+                var pinBtn = document.createElement("button");
+                pinBtn.innerText = "Unpin";
+                pinBtn.classList.add("unpinBtn");
+                pinBtn.onclick = function(){
+                    var url = "unpin?postId=" + post.id;
+                    get(url, function(){
+                        post.isPinned = "false";
+                        postContainerEle.classList.remove("isPinned");
+                    });
+                };
+                return pinBtn;
+
+            }
+
             //display time at the bottom right corner of a post. when user click on this it will goes to the original instagram
             //post.
             function makeDisplayTimeEle(post) {
@@ -621,9 +696,9 @@
         xmlhttp.onreadystatechange = function () {
             if (xmlhttp.readyState == XMLHttpRequest.DONE) {
                 if (xmlhttp.status == 200) {
-                    success(xmlhttp.responseText);
+                    if(success) success(xmlhttp.responseText);
                 } else {
-                    failure();
+                    if(failure) failure();
                 }
             }
         };
